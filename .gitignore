@@ -1,0 +1,8 @@
+# 构建产物
+out/
+*.tar.xz
+jq-*/
+
+# Python
+__pycache__/
+*.pyc

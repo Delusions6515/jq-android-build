@@ -1,0 +1,116 @@
+name: Build jq for Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      jq_version:
+        description: 'jq 版本: latest(最新 release) / 完整版本(如 1.8.2)'
+        default: latest
+        required: false
+      target_arch:
+        description: '目标架构 (all=全部 4 架构)'
+        default: all
+        type: choice
+        options: [all, arm64, arm, x64, ia32]
+      ndk_version:
+        description: 'NDK 版本: 留空用 runner 默认 / latest(最新稳定) / 具体版本如 r29'
+        default: ''
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 手动选择具体架构时只构建该架构; 默认构建全部 4 架构
+        arch: ${{ (inputs.target_arch || 'all') == 'all' && fromJSON('["arm64","arm","x64","ia32"]') || fromJSON(format('["{0}"]', inputs.target_arch || 'all')) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # 提前解析版本 (build.sh 的 resolve_version 逻辑一致)
+      - name: Resolve jq version
+        run: |
+          V="${{ inputs.jq_version || 'latest' }}"
+          case "$V" in
+            ""|latest)
+              VER=$(curl -fsSL --max-time 30 "https://api.github.com/repos/jqlang/jq/releases/latest" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tag_name","").lstrip("jq-"))') ;;
+            *)
+              VER="${V#jq-}"; VER="${V#v}" ;;
+          esac
+          [ -n "$VER" ] || { echo "无法解析 jq 版本: $V" >&2; exit 1; }
+          echo "JQ_VER=$VER" >> "$GITHUB_ENV"
+          echo "JQ_LINE=${VER%.*}" >> "$GITHUB_ENV"
+          echo "解析到 jq $VER (line ${VER%.*})"
+
+      # NDK 版本解析: 留空=runner 默认 / latest(脚本解析最新稳定) / 具体版本
+      - name: Resolve NDK version
+        run: |
+          INPUT="${{ inputs.ndk_version }}"
+          VER=""
+          case "$INPUT" in
+            "")
+              echo "使用 runner 默认 NDK" ;;
+            latest)
+              VER=$(python3 scripts/ndk.py latest 2>/dev/null || true)
+              if [ -n "$VER" ]; then echo "最新稳定 NDK: $VER"; else echo "::warning::解析最新 NDK 失败, 回退 runner 默认 NDK"; fi ;;
+            *)
+              VER="$INPUT" ;;
+          esac
+          echo "NDK_VER=$VER" >> "$GITHUB_ENV"
+
+      - name: Restore NDK cache
+        id: cache-ndk
+        if: env.NDK_VER != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: ndk-${{ env.NDK_VER }}
+          key: ndk-${{ env.NDK_VER }}
+
+      - name: Install NDK
+        if: env.NDK_VER != ''
+        run: |
+          NDK_HOME="${{ github.workspace }}/ndk-${{ env.NDK_VER }}/android-ndk-${{ env.NDK_VER }}"
+          if [ ! -x "$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]; then
+            echo "下载 NDK ${{ env.NDK_VER }} ..."
+            if ! curl -fL --retry 3 -o /tmp/ndk.zip "https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VER }}-linux.zip"; then
+              echo "::warning::NDK ${{ env.NDK_VER }} 下载失败, 回退 runner 默认 NDK"
+              echo "NDK_VER=" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            mkdir -p "${{ github.workspace }}/ndk-${{ env.NDK_VER }}"
+            unzip -q /tmp/ndk.zip -d "${{ github.workspace }}/ndk-${{ env.NDK_VER }}"
+            rm -f /tmp/ndk.zip
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_HOME" >> "$GITHUB_ENV"
+          echo "NDK: $NDK_HOME"
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y xz-utils patch file build-essential
+
+      - name: Build
+        env:
+          JQ_VERSION: ${{ env.JQ_VER }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          ./build.sh
+          ls -lh out/jq-android-*.tar.xz 2>/dev/null || true
+
+      # 保存缓存: always() = 构建失败也保存 (重跑增量); cache-hit=true 跳过
+      - name: Save NDK cache
+        if: always() && env.NDK_VER != '' && steps.cache-ndk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ndk-${{ env.NDK_VER }}
+          key: ${{ steps.cache-ndk.outputs.cache-primary-key }}
+
+      - name: Upload artifact
+        if: hashFiles('out/jq-android-*.tar.xz') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: jq-android-${{ matrix.arch }}-${{ env.JQ_VER }}
+          path: out/jq-android-*.tar.xz
+          if-no-files-found: error
