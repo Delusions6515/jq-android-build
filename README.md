@@ -1,7 +1,7 @@
 # jq-android-build
 
 用 GitHub Actions 编译 jq for Android，产出**静态链接、自包含**的二进制
-（`--with-oniguruma=builtin` + `LDFLAGS=-static`，oniguruma 内置，无动态依赖），
+（`--with-oniguruma=builtin` + `LDFLAGS=-all-static`，oniguruma 内置，无动态依赖），
 可在普通 Android 上直接运行，无需 termux。
 
 构建方法参考 jqlang/jq 官方静态构建方式与 termux-packages 的 jq 包。
