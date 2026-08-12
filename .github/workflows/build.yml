@@ -16,6 +16,10 @@ on:
         description: 'NDK 版本: 留空用 runner 默认 / latest(最新稳定) / 具体版本如 r29'
         default: ''
         required: false
+  schedule:
+    # 每月 5 日 02:20 UTC 检查并构建最新 release (全部架构)
+    # jq 无 LTS 概念: 有新版本自动追加到对应版本线的 release, 已发布版本自动跳过
+    - cron: '20 2 5 * *'
 
 permissions:
   contents: write
@@ -114,3 +118,19 @@ jobs:
           name: jq-android-${{ matrix.arch }}-${{ env.JQ_VER }}
           path: out/jq-android-*.tar.xz
           if-no-files-found: error
+
+      # 历史版本保留: release 按版本线归档 (jq-android-<arch>-<line>),
+      # 每个版本一个 asset (jq-android-<arch>-<version>.tar.xz), 同名自动跳过, 新版本追加
+      - name: Upload release
+        if: hashFiles('out/jq-android-*.tar.xz') != ''
+        uses: ncipollo/release-action@v1.21.0
+        with:
+          tag: jq-android-${{ matrix.arch }}-${{ env.JQ_LINE }}
+          name: jq for Android (${{ matrix.arch }}) - ${{ env.JQ_LINE }}.x
+          artifacts: out/jq-android-*.tar.xz
+          allowUpdates: true
+          replacesArtifacts: false
+          body: |
+            jq for Android (${{ matrix.arch }}), jq ${{ env.JQ_LINE }}.x 系列, 自包含静态二进制
+            本 release 按版本线归档: 每个版本一个 asset (jq-android-<arch>-<version>.tar.xz), 历史版本全部保留
+            构建记录: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
