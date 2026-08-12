@@ -17,9 +17,9 @@ on:
         default: ''
         required: false
   schedule:
-    # 每月 5 日 02:20 UTC 检查并构建最新 release (全部架构)
-    # jq 无 LTS 概念: 有新版本自动追加到对应版本线的 release, 已发布版本自动跳过
-    - cron: '20 2 5 * *'
+    # 每天 02:20 UTC 检查最新 release (全部架构)
+    # jq 无 LTS 概念: 有新版本自动追加到对应版本线的 release, 已发布版本秒跳过 (不下载 NDK/不编译)
+    - cron: '20 2 * * *'
 
 permissions:
   contents: write
