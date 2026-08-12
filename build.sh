@@ -163,7 +163,9 @@ info "配置 ..."
   --with-oniguruma=builtin
 
 info "编译 (静态链接, 通常几分钟) ..."
-make -j"$(nproc)" LDFLAGS="-static -s"
+# -all-static: jq 用 libtool, -static 只优先静态库不会真全静态; -all-static 才是完全静态
+# (jq 官方 README: make LDFLAGS=-all-static)
+make -j"$(nproc)" LDFLAGS="-all-static -s"
 
 # ---------- 安装 & 打包 ----------
 STAGE="$OUT_DIR/jq-${VER}-android-${DEST_CPU}"
