@@ -14,7 +14,7 @@ on:
         options: [all, arm64, arm, x64, ia32]
       ndk_version:
         description: 'NDK 版本: 留空用 runner 默认 / latest(最新稳定) / 具体版本如 r29'
-        default: ''
+        default: 'r29'
         required: false
   schedule:
     # 每天 02:20 UTC 检查最新 release (全部架构)
